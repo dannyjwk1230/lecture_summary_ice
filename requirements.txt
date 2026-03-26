@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+google-generativeai
+boto3
+sqlalchemy
+python-dotenv
+streamlit
+requests
