@@ -1,50 +1,77 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends
-from sqlalchemy.orm import Session
-from database import get_db, Lecture
-from services import LectureService
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header
 import shutil
 import os
+from services import LectureService
+from database import supabase
 
 app = FastAPI()
 service = LectureService()
 
-@app.post("/api/summarize")
+# 대용량 파일 임시 폴더
+UPLOAD_DIR = "temp"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Supabase Auth 토큰 검증 의존성
+async def get_current_user(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="인증 토큰이 없습니다.")
+    token = authorization.split(" ")[1]
+    try:
+        # JWT 토큰을 Supabase에 던져 사용자 정보 확인
+        user = supabase.auth.get_user(token)
+        return user.user
+    except Exception:
+        raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
+
+@app.post("/api/v1/summarize")
 async def summarize(
     title: str = Form(...),
+    start_page: int = Form(...),
+    end_page: int = Form(...),
     audio: UploadFile = File(...),
     pdf: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    user = Depends(get_current_user) # 인증된 사용자만 허용
 ):
-    # 임시 저장
-    audio_path = f"temp_{audio.filename}"
-    pdf_path = f"temp_{pdf.filename}"
+    # 1. 서버에 임시 저장 (500MB 스트리밍 대응)
+    temp_audio = os.path.join(UPLOAD_DIR, f"{user.id}_{audio.filename}")
+    temp_pdf = os.path.join(UPLOAD_DIR, f"{user.id}_{pdf.filename}")
     
-    with open(audio_path, "wb") as f: shutil.copyfileobj(audio.file, f)
-    with open(pdf_path, "wb") as f: shutil.copyfileobj(pdf.file, f)
-
     try:
-        # S3 업로드
-        audio_key = service.upload_to_s3(audio_path, f"audio/{audio.filename}")
-        pdf_key = service.upload_to_s3(pdf_path, f"pdf/{pdf.filename}")
+        with open(temp_audio, "wb") as buffer:
+            shutil.copyfileobj(audio.file, buffer)
+        with open(temp_pdf, "wb") as buffer:
+            shutil.copyfileobj(pdf.file, buffer)
 
-        # Gemini 요약
-        summary_text = service.process_with_gemini(audio_path, pdf_path)
+        # 2. GCS 영구 저장소 업로드
+        audio_uri = service.upload_to_gcs(temp_audio, f"audio/{user.id}/{audio.filename}")
+        pdf_uri = service.upload_to_gcs(temp_pdf, f"pdf/{user.id}/{pdf.filename}")
 
-        # DB 저장
-        new_lecture = Lecture(
-            title=title, audio_key=audio_key, 
-            pdf_key=pdf_key, summary=summary_text
-        )
-        db.add(new_lecture)
-        db.commit()
+        # 3. Gemini 분석 (서버가 중개)
+        summary = service.analyze_lecture(temp_audio, temp_pdf, start_page, end_page)
 
-        return {"status": "success", "summary": summary_text}
+        # 4. Supabase DB에 메타데이터 저장
+        supabase.table("lectures").insert({
+            "user_id": user.id,
+            "title": title,
+            "audio_url": audio_uri,
+            "pdf_url": pdf_uri,
+            "summary": summary,
+            "start_page": start_page,
+            "end_page": end_page
+        }).execute()
+
+        return {"status": "success", "summary": summary}
 
     finally:
-        # 로컬 파일 삭제
-        if os.path.exists(audio_path): os.remove(audio_path)
-        if os.path.exists(pdf_path): os.remove(pdf_path)
+        # 서버 용량 관리를 위해 임시 파일 즉시 삭제
+        for p in [temp_audio, temp_pdf]:
+            if os.path.exists(p): os.remove(p)
 
-@app.get("/api/history")
-async def get_history(db: Session = Depends(get_db)):
-    return db.query(Lecture).order_by(Lecture.created_at.desc()).all()
+@app.get("/api/v1/history")
+async def get_history(user = Depends(get_current_user)):
+    # 로그인한 사용자의 데이터만 조회
+    response = supabase.table("lectures") \
+        .select("*") \
+        .eq("user_id", user.id) \
+        .order("created_at", desc=True).execute()
+    return response.data
