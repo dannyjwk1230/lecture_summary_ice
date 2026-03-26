@@ -2,8 +2,7 @@ fastapi
 uvicorn
 python-multipart
 google-generativeai
-boto3
-sqlalchemy
+supabase
 python-dotenv
 streamlit
 requests
