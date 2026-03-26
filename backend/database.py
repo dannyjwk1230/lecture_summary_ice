@@ -1,29 +1,12 @@
-from sqlalchemy import create_column, create_engine, Column, Integer, String, Text, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
 
-DATABASE_URL = "sqlite:///./lecture_mint.db"
+load_dotenv()
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# Supabase 설정 정보 로드
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-class Lecture(Base):
-    __tablename__ = "lectures"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    audio_key = Column(String)  # S3 경로
-    pdf_key = Column(String)    # S3 경로
-    summary = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-Base.metadata.create_all(bind=engine)
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# 서버 전체에서 공유할 DB 클라이언트 생성
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)

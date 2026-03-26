@@ -3,6 +3,7 @@ uvicorn
 python-multipart
 google-generativeai
 supabase
+google-cloud-storage
 python-dotenv
 streamlit
 requests

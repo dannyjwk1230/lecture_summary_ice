@@ -1,4 +1,6 @@
 backend/.env
+google-key.json
+
 bin/
 tmp/
 *.tmp
