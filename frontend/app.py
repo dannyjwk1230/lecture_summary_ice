@@ -4,8 +4,8 @@ from supabase import create_client
 
 # 설정
 BACKEND_URL = "http://localhost:8000"
-SUPABASE_URL = "your_supabase_url"
-SUPABASE_KEY = "your_anon_key"
+SUPABASE_URL = "https://rgbgbowxnawjfraqwkwf.supabase.co"
+SUPABASE_KEY = "sb_publishable_3vRSaYFY9o47nxqPTUxPag_G1uPqjXI"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="Lecture Mint", layout="wide")
@@ -59,11 +59,17 @@ with tab1:
             res = requests.post(f"{BACKEND_URL}/api/v1/summarize", 
                                 headers=headers, files=files, data=data)
             
+            result = res.json()
+
             if res.status_code == 200:
+                # 성공했을 때만 요약본 출력
                 st.success("분석 완료!")
-                st.markdown(res.json()["summary"])
+                st.markdown(result["summary"])
             else:
-                st.error("권한이 없거나 분석 중 오류가 발생했습니다.")
+                # 실패(422 등)했을 때 서버가 보낸 구체적인 이유 출력
+                st.error(f"서버 오류 발생 (상태 코드: {res.status_code})")
+                st.write("상세 에러 내용:")
+                st.json(result)
 
 with tab2:
     if st.button("내 기록 불러오기 🔄"):
