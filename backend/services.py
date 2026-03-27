@@ -1,45 +1,59 @@
 import os
-import time
-from google.cloud import storage
+import boto3
 import google.generativeai as genai
-from database import supabase
+from database import supabase # DB는 여전히 슈파베이스
+from dotenv import load_dotenv
+import time
+
+load_dotenv()
 
 class LectureService:
     def __init__(self):
-        # 1. Google Cloud Storage 설정 (JSON 키 파일 필요)
-        self.gcs_client = storage.Client.from_service_account_json("google-key.json")
-        self.bucket = self.gcs_client.bucket(os.getenv("GCS_BUCKET_NAME"))
-        
-        # 2. Gemini API 설정
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = genai.GenerativeModel("gemini-3.1-flash")
+        # 1. Cloudflare R2 설정 (S3 호환 API 사용)
+        self.s3_client = boto3.client(
+            service_name="s3",
+            endpoint_url=os.getenv("R2_ENDPOINT_URL"), # R2 고유 엔드포인트
+            aws_access_key_id=os.getenv("R2_ACCESS_KEY"),
+            aws_secret_access_key=os.getenv("R2_SECRET_KEY"),
+            region_name="auto" # R2는 보통 auto로 설정
+        )
+        self.bucket_name = os.getenv("R2_BUCKET_NAME")
 
-    def upload_to_gcs(self, local_path, blob_name):
-        """파일을 GCS로 업로드하고 gs:// 경로를 반환"""
-        blob = self.bucket.blob(blob_name)
-        blob.upload_from_filename(local_path)
-        return f"gs://{self.bucket.name}/{blob_name}"
+        # 2. Gemini 설정
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        self.model = genai.GenerativeModel("models/gemini-3-flash-preview")
+
+    def upload_to_r2(self, local_path, file_key):
+        """10GB 무료 R2 저장소에 파일 업로드"""
+        self.s3_client.upload_file(local_path, self.bucket_name, file_key)
+        # R2의 파일 주소 반환
+        return f"{os.getenv('R2_PUBLIC_URL')}/{file_key}"
 
     def analyze_lecture(self, audio_path, pdf_path, start_pg, end_pg):
-        """Gemini 멀티모달 분석: 오디오 + PDF(범위 지정)"""
-        # Gemini 전용 임시 저장소에 파일 업로드
+        """Gemini 멀티모달 분석 (코드 동일)"""
         g_audio = genai.upload_file(path=audio_path)
         g_pdf = genai.upload_file(path=pdf_path)
 
-        # 오디오 분석 준비 대기
         while g_audio.state.name == "PROCESSING":
             time.sleep(2)
             g_audio = genai.get_file(g_audio.name)
 
-        # 페이지 범위를 명시한 맞춤형 프롬프트
-        prompt = f"""
-        강의 녹음본과 PDF 교안을 비교하여 요약해주세요.
-        
-        [제약 사항]
-        - PDF 자료 중 {start_pg}페이지부터 {end_pg}페이지 사이의 내용에 집중할 것.
-        - 교수님의 설명과 PDF의 시각 자료(도표, 그림)를 연결하여 정리할 것.
-        - 중요 키워드와 타임스탬프를 포함한 마크다운 형식으로 작성할 것.
-        """
-
+        prompt = f"{start_pg}p ~ {end_pg}p 사이의 PDF 내용을 기반으로 오디오를 요약해줘."
         response = self.model.generate_content([prompt, g_audio, g_pdf])
         return response.text
+    
+    def save_metadata(self, file_key, r2_url, summary_text):
+        """분석 결과와 R2 URL을 Supabase DB에 저장"""
+        try:
+            data = {
+                "file_name": file_key,
+                "file_url": r2_url,
+                "summary": summary_text,
+                "created_at": "now()" # Supabase에서 자동 생성 설정 가능
+            }
+            # 'lectures'는 Supabase에 생성한 테이블 이름입니다.
+            response = supabase.table("lectures").insert(data).execute()
+            return response
+        except Exception as e:
+            print(f"데이터베이스 저장 중 오류 발생: {e}")
+            return None
