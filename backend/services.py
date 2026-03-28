@@ -42,17 +42,19 @@ class LectureService:
         response = self.model.generate_content([prompt, g_audio, g_pdf])
         return response.text
     
-    def save_metadata(self, file_key, r2_url, summary_text):
+    def save_metadata(self, db_data):
         """분석 결과와 R2 URL을 Supabase DB에 저장"""
         try:
-            data = {
-                "file_name": file_key,
-                "file_url": r2_url,
-                "summary": summary_text,
-                "created_at": "now()" # Supabase에서 자동 생성 설정 가능
-            }
+            # data = {
+            #     "file_name": db_data.file_key,
+            #     "file_url": db_data.r2_url,
+            #     "summary": db_data.summary_text,
+            #     "created_at": "now()" # Supabase에서 자동 생성 설정 가능
+            # }
+            if "created_at" not in db_data:
+                db_data["created_at"] = "now()"
             # 'lectures'는 Supabase에 생성한 테이블 이름입니다.
-            response = supabase.table("lectures").insert(data).execute()
+            response = supabase.table("lectures").insert(db_data).execute()
             return response
         except Exception as e:
             print(f"데이터베이스 저장 중 오류 발생: {e}")
