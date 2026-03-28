@@ -8,3 +8,6 @@ google-cloud-storage
 python-dotenv
 streamlit
 requests
+pymupdf #pdf 커팅 라이브러리
+openai-whisper #stt 라이브러리
+torch #hugging-face space 사용을 위한 라이브러리
