@@ -42,7 +42,7 @@ class LectureService:
         response = self.model.generate_content([prompt, g_audio, g_pdf])
         return response.text
     
-    def save_metadata(self, db_data):
+    def save_metadata(self, db_data):   #db_data의 형식에 맞춰 수정
         """분석 결과와 R2 URL을 Supabase DB에 저장"""
         try:
             # data = {
