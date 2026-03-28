@@ -1,15 +1,21 @@
-import logging
-import os
-import shutil
-
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header
-
+from fastapi.middleware.cors import CORSMiddleware
+import shutil
+import os
+import boto3
 from services import LectureService
 from database import supabase
 
-logger = logging.getLogger(__name__)
-
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8501",                          # 로컬 개발용
+        "https://유저명-프론트스페이스이름.hf.space",      # 허깅페이스 프론트 주소
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 service = LectureService()
 
 # 대용량 파일 처리를 위한 임시 폴더 설정
@@ -85,21 +91,9 @@ async def summarize(
 
         return {"status": "success", "summary": summary_text}
 
-    except HTTPException:
-        # 인증 실패 등 의도된 HTTP 응답은 그대로 전달
-        raise
     except Exception as e:
-        # 서버 로그에는 전체 스택 트레이스 기록 (원인 추적용)
-        logger.exception(
-            "summarize 실패: user_id=%s title=%s",
-            getattr(user, "id", None),
-            title,
-        )
-        # 클라이언트에는 일반적인 메시지 (내부 예외 문자열은 기본 비노출)
-        detail = "요약 처리 중 서버 오류가 발생했습니다."
-        if os.getenv("DEBUG", "").lower() in ("1", "true", "yes"):
-            detail = f"{detail} ({e!s})"
-        raise HTTPException(status_code=500, detail=detail)
+        # 에러 발생 시 상세 내용 반환
+        return {"status": "error", "message": str(e)}
 
     finally:
         # [5] 서버 용량 확보를 위해 임시 파일은 즉시 삭제
