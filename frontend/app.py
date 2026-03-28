@@ -1,14 +1,27 @@
-import streamlit as st
+import os
+from pathlib import Path
+
 import requests
+import streamlit as st
+from dotenv import load_dotenv
 from supabase import create_client
 
-# 설정
-BACKEND_URL = "http://localhost:8000"
-SUPABASE_URL = "https://rgbgbowxnawjfraqwkwf.supabase.co"
-SUPABASE_KEY = "sb_publishable_3vRSaYFY9o47nxqPTUxPag_G1uPqjXI"
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 st.set_page_config(page_title="Lecture Mint", layout="wide")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error(
+        "환경 변수 SUPABASE_URL, SUPABASE_KEY가 필요합니다. "
+        "frontend/.env 파일을 만들고 .env.example을 참고해 주세요."
+    )
+    st.stop()
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 세션 상태 관리 (Auth)
 if "token" not in st.session_state:

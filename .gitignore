@@ -1,4 +1,5 @@
 backend/.env
+frontend/.env
 google-key.json
 backend/test.py
 
@@ -24,3 +25,5 @@ __pycache__/
 .venv/
 env/
 venv/
+
+.cursorignore
